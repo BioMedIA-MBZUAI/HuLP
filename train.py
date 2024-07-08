@@ -44,7 +44,6 @@ from sklearn.metrics import (
 )
 
 from datetime import datetime
-from torch.optim.lr_scheduler import OneCycleLR
 
 from sklearn.metrics import brier_score_loss, roc_auc_score
 
@@ -52,8 +51,6 @@ from lifelines.utils import concordance_index
 
 sys.path.append("torchmtlr")
 from torchmtlr import (
-    MTLR,
-    mtlr_neg_log_likelihood,
     mtlr_survival,
     mtlr_survival_at_times,
     mtlr_risk,
@@ -66,9 +63,7 @@ import random
 import json
 
 from utils import (
-    LoadHdf5d,
-    ClipCT,
-    ClipCTHecktor,
+    create_multiclass_dict,
     deephit_encode_survival,
     predict_surv_df,
     prognosis_ranking_loss,
@@ -174,7 +169,7 @@ lr = 1e-3
 batch_size = 32
 emb_size = 64
 number_warmup_epochs = 5
-max_epochs = 100
+max_epochs = 50
 
 if "mtlr" in prognosis and "deephit" not in prognosis_loss:
     prognosis_loss = "original_mtlr"
@@ -184,20 +179,6 @@ root_dir = f"{cfg.output_dir}/{current_datetime}"
 
 if not os.path.exists(root_dir):
     os.makedirs(root_dir)
-
-# TODO: move to utils
-def create_multiclass_dict(data_train, one_hot_cols):
-    i = 0
-    multiclass_dict = {}
-    for col in one_hot_cols:
-        # num_unique_vals = data_train[col].nunique()
-        num_unique_vals = len([i for i in data_train.columns if col in i])
-        
-        # TODO: make more dynamic to account for unordered columns
-        multiclass_dict.update({col: slice(i, i + num_unique_vals)})
-        i += num_unique_vals
-
-    return multiclass_dict
 
 if cfg.dataset_name == "lung":
     df_clinical, data_train = make_chaimeleon_data()
@@ -276,7 +257,7 @@ if cfg.dataset_name == "lung":
     if impute:
         data_train = imputer(data_train, impute, impute_percent, SEED, idx_train=train_id, cfg=cfg)
     else:
-        for i in ['gender', 'smoking_status', 'clinical_category', 'regional_nodes_category', 'metastasis_category']: #df_clinical.columns[4:]:
+        for i in ['gender', 'smoking_status', 'clinical_category', 'regional_nodes_category', 'metastasis_category']:
             if impute_percent != 30:
                 data_train[i] = data_train[i].sample(frac=impute_percent / 100)
 
@@ -527,7 +508,7 @@ for epoch in tqdm(range(max_epochs)):
     epoch_loss = 0
     step = 0
 
-    y_pred_prog = torch.tensor([], dtype=torch.float32, device=device)  #
+    y_pred_prog = torch.tensor([], dtype=torch.float32, device=device) 
     y_time = torch.tensor([], dtype=torch.long, device=device)  # true label time
     y_event = torch.tensor([], dtype=torch.long, device=device)  # true label event
     for batch_data in train_loader:
@@ -572,7 +553,7 @@ for epoch in tqdm(range(max_epochs)):
                         y_prog = y_prog.argmax(dim=1)
                         prog_loss = deephit_loss(
                             outputs_prog.as_tensor(), y_prog, events
-                        )  # deephit_loss(scores, labels, censors)
+                        ) 
                     except Exception as e:
                         print("Train deephit loss failed")
                         print("times", times.shape)

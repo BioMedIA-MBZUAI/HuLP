@@ -127,7 +127,7 @@ def lung_ct_transforms():
     ClipCT_range = [-1000, 200]
     ClipCT_window_center_width = [False, False]
 
-    prob = 0.25  # 0.15
+    prob = 0.25
     train_transforms = Compose(
         [
             LoadHdf5d(keys=["image", "path_to_h5"], image_only=True),

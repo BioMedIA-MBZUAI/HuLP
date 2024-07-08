@@ -94,7 +94,7 @@ def make_hecktor_data(time_col="time", event_col="event", id_col="PatientID_x"):
     data_train = copy.deepcopy(df)
 
     data_train.index = data_train[id_col]
-    data_centers_train = data_train["Center"]
+    # data_centers_train = data_train["Center"]
 
     print(data_train)
 
@@ -109,7 +109,7 @@ def hecktor_ct_pet_transforms():
     # Define transforms
     xyz_dim = [176, 176, 144]
 
-    prob = 0.25  # 0.15
+    prob = 0.25
     train_transforms = Compose(
         [
             LoadImaged(
@@ -126,7 +126,8 @@ def hecktor_ct_pet_transforms():
             ),
             ClipCTHecktor(keys=["ct", "pt"]),
             Resized(
-                keys=["ct", "pt"], spatial_size=(128, 128, 112), mode="trilinear"
+                # keys=["ct", "pt"], spatial_size=(128, 128, 112), mode="trilinear"
+                keys=["ct", "pt"], spatial_size=(112, 112, 130), mode="trilinear"
             ),
             ConcatItemsd(keys=["pt", "ct"], name="image"),
             NormalizeIntensityd(keys=["image"], channel_wise=True),

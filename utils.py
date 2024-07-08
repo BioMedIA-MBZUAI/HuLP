@@ -1,4 +1,3 @@
-import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -15,91 +14,21 @@ from monai.transforms import (
     MapTransform,
 )
 
+def create_multiclass_dict(data_train, one_hot_cols):
+    i = 0
+    multiclass_dict = {}
+    for col in one_hot_cols:
+        # num_unique_vals = data_train[col].nunique()
+        num_unique_vals = len([i for i in data_train.columns if col in i])
+        
+        # TODO: make more dynamic to account for unordered columns
+        multiclass_dict.update({col: slice(i, i + num_unique_vals)})
+        i += num_unique_vals
 
-class LoadHdf5d(MapTransform):
-    def __init__(self, keys, image_only=False):
-        """
-        "image" contains patient_IDs
-        "path_to_h5" contains folder path
-
-        """
-        super().__init__(keys)
-        self.image_only = image_only
-
-    def __call__(self, data):
-        d = dict(data)
-        filename = d["path_to_h5"]
-        patient_ID = d["image"]
-        hdf_obj2 = h5py.File(filename, "r")
-
-        if self.image_only:
-            d["image"] = hdf_obj2[patient_ID]["image"][:]
-        else:
-            meta = dict(hdf_obj2[patient_ID].attrs)
-            d["image"] = (hdf_obj2[patient_ID]["image"][:], meta)  # image  # metadata
-
-        hdf_obj2.close()
-
-        return d
-
-
-class ClipCT(MapTransform):
-    """
-    Convert labels to multi channels based on hecktor classes:
-    label 1 is the tumor
-    label 2 is the lymph node
-
-    """
-
-    def __init__(
-        self, keys, min=-1024, max=1024, window_center=False, window_width=False
-    ):
-        """
-        "image" contains patient_IDs
-        "path_to_h5" contains folder path
-
-        """
-        super().__init__(keys)
-        self.min = min
-        self.max = max
-        self.window_center = window_center
-        self.window_width = window_width
-
-        if self.window_center and self.window_width:
-            self.min = window_center - window_width // 2  # minimum HU level
-            self.max = window_center + window_width // 2  # maximum HU level
-
-    def __call__(self, data):
-        d = dict(data)
-        d["image"] = np.clip(d["image"], self.min, self.max)
-        return d
-
-
-class ClipCTHecktor(MapTransform):
-    """
-    Convert labels to multi channels based on hecktor classes:
-    label 1 is the tumor
-    label 2 is the lymph node
-
-    """
-
-    def __call__(self, data):
-        d = dict(data)
-        for key in self.keys:
-            if key == "ct":
-                d[key] = torch.clip(d[key], min=-200, max=200)
-            elif key == "pt":
-                d[key] = torch.clip(d[key], d[key].min(), 5)
-        return d
-
-
-########################### LOADER ###########################
+    return multiclass_dict
 
 ########################### DEEPHIT ###########################
-# from https://github.com/havakv/pycox/blob/master/pycox/models/deephit.py
-
-# import torchtuples as tt
-# from pycox import models
+# modified from https://github.com/havakv/pycox/blob/master/pycox/models/deephit.py
 
 def deephit_encode_survival(time, event, bins) -> torch.Tensor:
     """Encodes survival time and event indicator in the format
@@ -150,7 +79,6 @@ def deephit_encode_survival(time, event, bins) -> torch.Tensor:
     # so we need to set it to True
     bin_idxs = torch.bucketize(time, bins, right=True)
     for i, (bin_idx, e) in enumerate(zip(bin_idxs, event)):
-        # TODO fix this
         if bin_idx >= bins.shape[0]:
             bin_idx = bins.shape[0] - 1
         if e == 1:
@@ -180,11 +108,8 @@ def predict_surv_df(input, duration_index, loss_type="deephit"):
         loss_type = "deephit"
     elif "mtlr" in loss_type:
         loss_type = "mtlr"
-    # surv = predict_surv(input, batch_size, True, eval_, True, num_workers)
     surv = predict_surv(input, False, loss_type)
     surv = pd.DataFrame(surv).T
-    # surv.index = duration_index
-    # return pd.DataFrame(surv, duration_index)
     return surv
 
 def predict_surv(input, numpy=None, loss_type="deephit"):
@@ -208,7 +133,6 @@ def predict_surv(input, numpy=None, loss_type="deephit"):
         [TupleTree, np.ndarray or tensor] -- Predictions
     """
     cif = predict_cif(input, False, loss_type)
-    # surv = 1.0 - cif.sum(1)
     surv = torch.exp(-cif)
     
     if type(surv) == monai.data.meta_tensor.MetaTensor:
@@ -216,8 +140,7 @@ def predict_surv(input, numpy=None, loss_type="deephit"):
     else:
         surv = surv.cpu().numpy()
 
-    return surv  # tt.utils.array_or_tensor(surv, numpy, input)
-
+    return surv
 
 def predict_cif(input, numpy=None, loss_type="deephit"):
     # CUMULATIVE HAZARD FUNCTION
@@ -238,10 +161,9 @@ def predict_cif(input, numpy=None, loss_type="deephit"):
     Returns:
         [np.ndarray or tensor] -- Predictions
     """
-    # pmf = predict_pmf(input, False)
     pmf = interpolate_predict_pmf(input, 10, 'const_pdf', None, loss_type)
     cif = pmf.cumsum(1)
-    return cif  # tt.utils.array_or_tensor(cif, numpy, input)
+    return cif  
 
 def interpolate_predict_pmf(input, sub=10, scheme='const_pdf', duration_index=None, loss_type="deephit"):
     if not scheme in ['const_pdf', 'lin_surv']:
@@ -278,7 +200,7 @@ def predict_pmf(preds, numpy=None, loss_type="deephit"):
     elif loss_type == "mtlr":
         preds = cumsum_reverse(preds, dim=1)
     pmf = pad_col(preds).softmax(1)[:, :-1]
-    return pmf  # tt.utils.array_or_tensor(pmf, numpy, preds)
+    return pmf 
 
 
 ########################### DEEPHIT ###########################
@@ -335,7 +257,6 @@ def prognosis_ranking_loss(logits, y_train, y_events, num_classes, device):
     """
     # 1. Separate censored vs. uncensored
     censored = y_events == 0
-    # uncensored = y_events == 1
     y_censored = y_train[censored]
     y_uncensored = y_train[~censored]
     logits_censored = logits.as_tensor()[censored]
@@ -354,8 +275,6 @@ def prognosis_ranking_loss(logits, y_train, y_events, num_classes, device):
                 ),
                 dim=0,
             )
-            # y_censored_expanded = torch.cat((y_censored_expanded, expanded_class), dim=0)
-            # logits_censored_expanded = torch.cat((logits_censored_expanded, logits_censored[idx].unsqueeze(0)))
             logits_censored_expanded = torch.cat(
                 (logits_censored_expanded, logits_censored[idx][None, ...]), dim=0
             )
@@ -501,7 +420,6 @@ def nll_pmf(phi, idx_durations, events, reduction: str = 'mean',
         events = events.float()
     events = events.view(-1)
     idx_durations = idx_durations.view(-1, 1)
-    # phi = utils.pad_col(phi)
     phi = pad_col(phi)
     gamma = phi.max(1)[0]
     cumsum = phi.sub(gamma.view(-1, 1)).exp().cumsum(1)
@@ -513,7 +431,6 @@ def nll_pmf(phi, idx_durations, events, reduction: str = 'mean',
     loss = - part1.add(part2).add(part3)
     return _reduction(loss, reduction)
 
-# def _reduction(loss: Tensor, reduction: str = 'mean') -> Tensor:
 def _reduction(loss, reduction: str = 'mean'):
     if reduction == 'none':
         return loss

@@ -1,39 +1,9 @@
 import pandas as pd
 import numpy as np
 import torch
+import h5py
 
-from monai.transforms import (
-    AsDiscrete,
-    Activations,
-    LoadImaged,
-    EnsureChannelFirstd,
-    Orientationd,
-    Compose,
-    RandRotate90d,
-    Resized,
-    MapTransform,
-    ScaleIntensityd,
-    RandBiasFieldd,
-    RandGaussianSmoothd,
-    RandAffined,
-    RandRotated,
-    Rand3DElasticd,
-    RandZoomd,
-    RandGaussianNoised,
-    RandGibbsNoised,
-    ShiftIntensityd,
-    RandShiftIntensityd,
-    RandGaussianSharpend,
-    AdjustContrastd,
-    RandAdjustContrastd,
-    CenterSpatialCropd,
-    SpatialPadd,
-    Spacingd,
-    NormalizeIntensityd,
-    ConcatItemsd,
-    RandFlipd,
-    SpatialCropd,
-)
+from monai.transforms import MapTransform
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.impute import KNNImputer
@@ -43,6 +13,83 @@ from sklearn.impute import IterativeImputer
 from sklearn.ensemble import RandomForestClassifier
 
 
+class LoadHdf5d(MapTransform):
+    def __init__(self, keys, image_only=False):
+        """
+        "image" contains patient_IDs
+        "path_to_h5" contains folder path
+
+        """
+        super().__init__(keys)
+        self.image_only = image_only
+
+    def __call__(self, data):
+        d = dict(data)
+        filename = d["path_to_h5"]
+        patient_ID = d["image"]
+        hdf_obj2 = h5py.File(filename, "r")
+
+        if self.image_only:
+            d["image"] = hdf_obj2[patient_ID]["image"][:]
+        else:
+            meta = dict(hdf_obj2[patient_ID].attrs)
+            d["image"] = (hdf_obj2[patient_ID]["image"][:], meta)  # image  # metadata
+
+        hdf_obj2.close()
+
+        return d
+
+
+class ClipCT(MapTransform):
+    """
+    Convert labels to multi channels based on hecktor classes:
+    label 1 is the tumor
+    label 2 is the lymph node
+
+    """
+
+    def __init__(
+        self, keys, min=-1024, max=1024, window_center=False, window_width=False
+    ):
+        """
+        "image" contains patient_IDs
+        "path_to_h5" contains folder path
+
+        """
+        super().__init__(keys)
+        self.min = min
+        self.max = max
+        self.window_center = window_center
+        self.window_width = window_width
+
+        if self.window_center and self.window_width:
+            self.min = window_center - window_width // 2  # minimum HU level
+            self.max = window_center + window_width // 2  # maximum HU level
+
+    def __call__(self, data):
+        d = dict(data)
+        d["image"] = np.clip(d["image"], self.min, self.max)
+        return d
+
+
+class ClipCTHecktor(MapTransform):
+    """
+    Convert labels to multi channels based on hecktor classes:
+    label 1 is the tumor
+    label 2 is the lymph node
+
+    """
+
+    def __call__(self, data):
+        d = dict(data)
+        for key in self.keys:
+            if key == "ct":
+                d[key] = torch.clip(d[key], min=-200, max=200)
+            elif key == "pt":
+                d[key] = torch.clip(d[key], d[key].min(), 5)
+        return d
+    
+    
 def imputer(data_train, impute_mode, impute_percent, seed, idx_train, cfg):
     cols_with_X = data_train.columns
     
@@ -151,9 +198,7 @@ def one_hot_encode(data_train, one_hot_cols, cfg):
             data_train, columns=one_hot_cols, drop_first=False
         )
 
-    elif cfg.dataset_name == "hecktor":
-        # data_train = data_train[one_hot_cols]
-        
+    elif cfg.dataset_name == "hecktor":        
         for i in data_train.columns:
             print(i, data_train[i].value_counts())
 
@@ -166,79 +211,3 @@ def one_hot_encode(data_train, one_hot_cols, cfg):
     data_train = data_train.drop(columns=cols_with_X)
 
     return data_train
-
-class LoadHdf5d(MapTransform):
-    def __init__(self, keys, image_only=False):
-        """
-        "image" contains patient_IDs
-        "path_to_h5" contains folder path
-
-        """
-        super().__init__(keys)
-        self.image_only = image_only
-
-    def __call__(self, data):
-        d = dict(data)
-        filename = d["path_to_h5"]
-        patient_ID = d["image"]
-        hdf_obj2 = h5py.File(filename, "r")
-
-        if self.image_only:
-            d["image"] = hdf_obj2[patient_ID]["image"][:]
-        else:
-            meta = dict(hdf_obj2[patient_ID].attrs)
-            d["image"] = (hdf_obj2[patient_ID]["image"][:], meta)  # image  # metadata
-
-        hdf_obj2.close()
-
-        return d
-
-
-class ClipCT(MapTransform):
-    """
-    Convert labels to multi channels based on hecktor classes:
-    label 1 is the tumor
-    label 2 is the lymph node
-
-    """
-
-    def __init__(
-        self, keys, min=-1024, max=1024, window_center=False, window_width=False
-    ):
-        """
-        "image" contains patient_IDs
-        "path_to_h5" contains folder path
-
-        """
-        super().__init__(keys)
-        self.min = min
-        self.max = max
-        self.window_center = window_center
-        self.window_width = window_width
-
-        if self.window_center and self.window_width:
-            self.min = window_center - window_width // 2  # minimum HU level
-            self.max = window_center + window_width // 2  # maximum HU level
-
-    def __call__(self, data):
-        d = dict(data)
-        d["image"] = np.clip(d["image"], self.min, self.max)
-        return d
-
-
-class ClipCTHecktor(MapTransform):
-    """
-    Convert labels to multi channels based on hecktor classes:
-    label 1 is the tumor
-    label 2 is the lymph node
-
-    """
-
-    def __call__(self, data):
-        d = dict(data)
-        for key in self.keys:
-            if key == "ct":
-                d[key] = torch.clip(d[key], min=-200, max=200)
-            elif key == "pt":
-                d[key] = torch.clip(d[key], d[key].min(), 5)
-        return d

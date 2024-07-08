@@ -99,7 +99,7 @@ parser.add_argument(
     "--impute_percent", type=int, default=30, help="value between 0 and 100"
 )
 parser.add_argument(
-    "--mtlr_loss", type=str, default="deephit", choices=["deephit", "original_mtlr"]
+    "--prognosis_loss", type=str, default="deephit", choices=["deephit", "original_mtlr"]
 )
 parser.add_argument(
     "--data_dir", type=str, help="path to data directory"
@@ -168,7 +168,7 @@ if cfg.model == "PrognosisModel":
 else:
     intervention = False
 
-mtlr_loss = cfg.mtlr_loss  # "prog_corn_rank" #"deephit" #None
+prognosis_loss = cfg.prognosis_loss  # "prog_corn_rank" #"deephit" #None
 prog_loss_wt = 0.2
 lr = 1e-3
 batch_size = 32
@@ -176,10 +176,10 @@ emb_size = 64
 number_warmup_epochs = 5
 max_epochs = 100
 
-if "mtlr" in prognosis and "deephit" not in mtlr_loss:
-    mtlr_loss = "original_mtlr"
+if "mtlr" in prognosis and "deephit" not in prognosis_loss:
+    prognosis_loss = "original_mtlr"
 
-current_datetime = f"{current_datetime}_HuLP_{impute}_{impute_percent}_{mtlr_loss}_seed{SEED}_fold{fold}"
+current_datetime = f"{current_datetime}_HuLP_{impute}_{impute_percent}_{prognosis_loss}_seed{SEED}_fold{fold}"
 root_dir = f"{cfg.output_dir}/{current_datetime}"
 
 if not os.path.exists(root_dir):
@@ -472,7 +472,7 @@ run = wandb.init(
         "model": cfg.model,
         "pre_prognosis": pre_prognosis,
         "prognosis": prognosis,
-        "mtlr_loss": mtlr_loss,
+        "prognosis_loss": prognosis_loss,
         "num_time_bins": num_time_bins,
         "image_only": image_only,
         "emb_size": emb_size,
@@ -556,7 +556,7 @@ for epoch in tqdm(range(max_epochs)):
                 y_time = torch.cat([y_time, times], dim=0)
                 y_event = torch.cat([y_event, events], dim=0)
 
-                if mtlr_loss == "original_mtlr":
+                if prognosis_loss == "original_mtlr":
                     y_prog = deephit_encode_survival(
                         times.cpu().numpy(), events.cpu().numpy(), time_bins
                     ).to(device)
@@ -564,7 +564,7 @@ for epoch in tqdm(range(max_epochs)):
                     prog_loss = deepmtlr_loss(
                         outputs_prog.as_tensor(), y_prog, events
                     )
-                elif mtlr_loss == "deephit":
+                elif prognosis_loss == "deephit":
                     try:
                         y_prog = deephit_encode_survival(
                             times.cpu().numpy(), events.cpu().numpy(), time_bins
@@ -618,9 +618,9 @@ for epoch in tqdm(range(max_epochs)):
             print(f"{step}/{epoch_len}, train_loss: {loss.item():.4f}")
 
     if outputs_prog is not None:
-        if "deephit" in mtlr_loss or "mtlr" in mtlr_loss:
+        if "deephit" in prognosis_loss or "mtlr" in prognosis_loss:
             surv = predict_surv_df(
-                y_pred_prog.detach(), time_bins.cpu().numpy(), loss_type=mtlr_loss
+                y_pred_prog.detach(), time_bins.cpu().numpy(), loss_type=prognosis_loss
             )
             ev = EvalSurv(
                 surv,
@@ -630,7 +630,7 @@ for epoch in tqdm(range(max_epochs)):
             )
             train_ci = ev.concordance_td("antolini")
 
-        elif "mtlr" in mtlr_loss:
+        elif "mtlr" in prognosis_loss:
             surv = predict_surv_df(
                 y_pred_prog.detach(), time_bins.cpu().numpy(), loss_type="mtlr"
             )
@@ -704,7 +704,7 @@ for epoch in tqdm(range(max_epochs)):
             val_pred_survival = mtlr_survival(y_pred_prog).cpu().numpy()
             val_pred_risk = mtlr_risk(y_pred_prog).cpu().numpy()
 
-            if "deephit" in mtlr_loss or "mtlr" in mtlr_loss:
+            if "deephit" in prognosis_loss or "mtlr" in prognosis_loss:
                 val_pred_survival_at_times = mtlr_survival_at_times(
                     y_pred_prog, time_bins[:-1], eval_times
                 )
@@ -721,7 +721,7 @@ for epoch in tqdm(range(max_epochs)):
                     eval_times,
                 )
 
-            if "deephit" in mtlr_loss or "mtlr" in mtlr_loss:
+            if "deephit" in prognosis_loss or "mtlr" in prognosis_loss:
                 try:
                     y_prog = deephit_encode_survival(
                         val_times.cpu().numpy(), val_events.cpu().numpy(), time_bins
@@ -736,7 +736,7 @@ for epoch in tqdm(range(max_epochs)):
                 surv = predict_surv_df(
                     y_pred_prog.detach(),
                     time_bins.cpu().numpy(),
-                    loss_type=mtlr_loss,
+                    loss_type=prognosis_loss,
                 )
                 ev = EvalSurv(
                     surv,

@@ -31,11 +31,11 @@ Now, you should be all set.
 ## :arrow_forward: Demo  
 Run the following for *Hecktor* dataset:
 
-```python train.py --model PrognosisModel --fold 0 --seed 0 --dataset_name hecktor --mtlr_loss deephit --image_only False``` 
+```python train.py --model PrognosisModel --fold 0 --seed 0 --dataset_name hecktor --prognosis_loss deephit``` 
 
 Run the following for *Lung cancer* dataset:
 
-```python train.py --model PrognosisModel --fold 0 --seed 0 --dataset_name lung --mtlr_loss deephit --image_only False```
+```python train.py --model PrognosisModel --fold 0 --seed 0 --dataset_name lung --prognosis_loss deephit```
 
 
 ## :black_nib: Citation

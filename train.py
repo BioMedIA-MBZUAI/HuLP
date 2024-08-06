@@ -82,7 +82,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument("--fold", type=int, default=0, help="")
 parser.add_argument("--seed", type=int, default=42, help="")
-parser.add_argument("--image_only", type=str, default="True", help="")
+parser.add_argument("--image_only", type=str, default="False", help="")
 parser.add_argument("--impute", type=str, default="None", help="")
 parser.add_argument(
     "--model",
